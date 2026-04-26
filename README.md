@@ -6,7 +6,7 @@ Non-record submission, **unlimited-compute track** (~100 min on 1×A6000, not th
 
 Implements the dynamic-chunking module from H-Net (Hwang, Wang & Gu 2025, arxiv:[2507.07955](https://arxiv.org/abs/2507.07955)) on byte-level FineWeb-Edu, with Mamba-2 layers replaced by pre-norm Transformer blocks so the chunking idea can be evaluated in isolation.
 
-**Result:** `val_bpb = 1.8756` after 10K steps. 16.27M params, 9.49MB compressed (well under 16MB cap).
+**Result:** `val_bpb = 1.8838` after 10K steps (reproducible from the included `.ptz`). 16.27M params, 9.49MB compressed (well under 16MB cap).
 
 ## Summary of Choices
 
@@ -40,10 +40,10 @@ Loss: L_AR + 0.03 · L_ratio
 | Submission | val_bpb | Compute | Params |
 |---|---:|---|---:|
 | Naive baseline (BPE sp1024) | 1.2244 | 10 min × 8×H100 | ~30M |
-| **This submission** (byte260, no tokenizer) | **1.8756** | ~100 min × 1×A6000 | 16.27M |
+| **This submission** (byte260, no tokenizer) | **1.8838** | ~100 min × 1×A6000 | 16.27M |
 | Top of leaderboard (Apr 9; BPE + ~10 tricks) | 1.0810 | 10 min × 8×H100 | ~30M |
 
-The 0.65 bpb gap is the cost of dropping BPE *and* every BPE-era trick. This is a clean reference for byte-level dynamic chunking, not a leaderboard climb.
+The 0.66 bpb gap is the cost of dropping BPE *and* every BPE-era trick. This is a clean reference for byte-level dynamic chunking, not a leaderboard climb.
 
 Going in I expected ~1.5 based on Chinchilla scaling. Landing at 1.88 surfaced that byte-level + 16M params + 300MB doesn't have the headroom to absorb the BPE token-tax — bigger model OR more data is needed before dynamic chunking can close the gap.
 
@@ -57,6 +57,8 @@ tokens_per_byte = total_tokens / total_bytes
 ```
 
 `total_bytes` is summed via a 260-entry LUT (`bytes_per_token_lut` in `train_hnet.py:118`): `lut[0:4] = 0` (specials), `lut[4:260] = 1` (raw bytes). No specials are emitted during training/eval — the data pipeline encodes raw UTF-8 with a +4 offset — so emitted tokens map 1:1 to bytes. Sanity check: encoding "Hello" → 5 byte-tokens (all in [4..259]), 5 source bytes, `tokens_per_byte = 1.0`, `bpb = CE / ln 2`.
+
+**End-to-end check.** Loading the shipped `final_model.int8.ptz` from disk, dequantising, and running val on the full split gives `val_bpb = 1.8838`. The training-time eval reported `1.8756` (in-training bf16 weights, full val); the ~0.008 gap is the cost of fp16 scale storage in the `.ptz` (per-row scales kept as fp16 to save bytes). The 1.8838 is the number a reviewer reproduces from the shipped artifact.
 
 ### Quantisation comparison
 
